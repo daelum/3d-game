@@ -48,12 +48,31 @@ const Projectile = ({
   
   // Handle collision with other objects
   const handleCollision = (event: any) => {
-    // Check if we hit an asteroid or other target
-    if (event.other.rigidBodyObject && event.other.rigidBodyObject.name === 'asteroid') {
-      if (onHit) {
-        onHit();
+    // Prevent multiple collision handling
+    if (!isActive) return;
+    
+    const other = event.other;
+    
+    // Check if we hit an asteroid
+    if (other && other.rigidBodyObject) {
+      const userData = other.rigidBodyObject.userData;
+      
+      if (userData && userData.type === 'asteroid') {
+        console.log('Hit asteroid with damage:', damageAmount);
+        
+        // Apply damage to the asteroid
+        if (typeof userData.takeDamage === 'function') {
+          userData.takeDamage(damageAmount);
+        }
+        
+        // Call onHit callback
+        if (onHit) {
+          onHit();
+        }
+        
+        // Deactivate the projectile
+        setIsActive(false);
       }
-      setIsActive(false);
     }
   };
   

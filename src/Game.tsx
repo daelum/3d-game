@@ -164,6 +164,11 @@ const GameScene = () => {
     }
   };
 
+  // Function to add points when an asteroid is destroyed
+  const handleAsteroidDestroyed = (points: number) => {
+    setScore(prevScore => prevScore + points);
+  };
+
   // Handle focus on the canvas
   const handleCanvasFocus = () => {
     setShowClickToPlay(false);
@@ -416,7 +421,11 @@ const GameScene = () => {
             </mesh>
             
             {/* Uncomment AsteroidField with the expanded map size */}
-            {!gameOver && <AsteroidField count={asteroidCount} radius={MAP_SIZE} />}
+            {!gameOver && <AsteroidField 
+              count={asteroidCount} 
+              radius={MAP_SIZE} 
+              onAsteroidDestroyed={handleAsteroidDestroyed}
+            />}
           </Suspense>
         </Physics>
         
