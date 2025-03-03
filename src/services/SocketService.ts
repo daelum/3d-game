@@ -36,13 +36,18 @@ class SocketService {
 
     // In development, connect to the local server
     // In production, connect to the DigitalOcean server
+    if (this.socket) return;
+
     const serverUrl = import.meta.env.PROD 
-      ? 'http://209.38.83.148:3000'  // Your DigitalOcean droplet IP
-      : 'http://localhost:3000';
+      ? '209.38.83.148:3000'  // Just host:port without protocol
+      : 'localhost:3000';
     
     console.log(`Attempting to connect to socket server at ${serverUrl}`);
     
-    this.socket = io(serverUrl);
+    this.socket = io(serverUrl, {
+      transports: ['websocket'],
+      secure: false
+    });
     
     // Add connection status listeners
     this.socket.on('connect', () => {
