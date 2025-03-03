@@ -52,7 +52,14 @@ const AsteroidField = ({
       const colors = ['#8A8A8A', '#A0A0A0', '#707070', '#909090', '#606060'];
       const color = colors[Math.floor(Math.random() * colors.length)];
       
-      return { position, size, velocity, color, id: i };
+      return { 
+        position, 
+        size, 
+        velocity, 
+        color, 
+        id: i,
+        isFragment: false // Ensure all initial asteroids have this property
+      };
     });
   }, [count, radius]);
 
