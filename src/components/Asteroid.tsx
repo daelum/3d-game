@@ -33,7 +33,7 @@ const Asteroid = ({
       const asteroidPosition = rigidBodyRef.current.translation();
       
       // If asteroid goes too far from origin, reset it to the opposite side
-      const limit = 50;
+      const limit = 250;
       if (Math.abs(asteroidPosition.x) > limit || 
           Math.abs(asteroidPosition.y) > limit || 
           Math.abs(asteroidPosition.z) > limit) {

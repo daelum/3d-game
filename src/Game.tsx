@@ -1,7 +1,7 @@
 import { Physics, RigidBody, CuboidCollider, RapierRigidBody, useRapier } from '@react-three/rapier';
-import { Stats, useGLTF, Stars, Environment, Sky } from '@react-three/drei';
+import { Stats, useGLTF, Stars, Environment, Sky, Grid } from '@react-three/drei';
 import SpaceFighter from './components/SpaceFighter';
-// import AsteroidField from './components/AsteroidField'; // Keep commented until we fix the import
+import AsteroidField from './components/AsteroidField'; // Uncommented to use it
 import { useControls } from 'leva';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Suspense, useState, useEffect, useRef } from 'react';
@@ -40,7 +40,7 @@ const EnhancedStarField = () => {
 };
 
 const GameScene = () => {
-  const { intensity, asteroidCount } = useControls('Environment', {
+  const { intensity, asteroidCount, showMapGrid } = useControls('Environment', {
     intensity: {
       value: 0.2,
       min: 0,
@@ -52,8 +52,15 @@ const GameScene = () => {
       min: 0,
       max: 200,
       step: 5,
+    },
+    showMapGrid: {
+      value: true,
+      label: 'Show 3D Map Grid'
     }
   });
+
+  // Define map size constants
+  const MAP_SIZE = 250; // To match the asteroid reset limit
 
   // Game state
   const [score, setScore] = useState(0);
@@ -202,7 +209,7 @@ const GameScene = () => {
         onFocus={() => handleCanvasFocus()}
       >
         <color attach="background" args={['#000']} />
-        <fog attach="fog" args={['#000', 30, 500]} />
+        <fog attach="fog" args={['#000', 50, 600]} />
         <ambientLight intensity={intensity} />
         
         {/* Add distant light sources to simulate stars */}
@@ -215,11 +222,101 @@ const GameScene = () => {
           <Suspense fallback={null}>
             <SpaceFighter rotation={[0, 0, 0]} onThrottleChange={updateThrottle} />
             
-            {/* Visual debug helpers - for development only */}
+            {/* 3D Map Grid visualization */}
+            {showMapGrid && (
+              <>
+                {/* X-Y plane (horizontal) */}
+                <Grid 
+                  position={[0, 0, 0]}
+                  args={[MAP_SIZE * 2, MAP_SIZE * 2]} 
+                  cellSize={20}
+                  cellThickness={0.5}
+                  cellColor="#2080ff"
+                  sectionSize={100}
+                  sectionThickness={1.5}
+                  sectionColor="#4080ff"
+                  fadeDistance={600}
+                  infiniteGrid={false}
+                />
+                
+                {/* X-Z plane (vertical along X axis) */}
+                <Grid 
+                  position={[0, 0, 0]}
+                  rotation={[Math.PI / 2, 0, 0]}
+                  args={[MAP_SIZE * 2, MAP_SIZE * 2]}
+                  cellSize={20}
+                  cellThickness={0.5}
+                  cellColor="#20ff80"
+                  sectionSize={100}
+                  sectionThickness={1.5}
+                  sectionColor="#40ff80"
+                  fadeDistance={600}
+                  infiniteGrid={false}
+                />
+                
+                {/* Y-Z plane (vertical along Z axis) */}
+                <Grid 
+                  position={[0, 0, 0]}
+                  rotation={[0, 0, Math.PI / 2]}
+                  args={[MAP_SIZE * 2, MAP_SIZE * 2]}
+                  cellSize={20}
+                  cellThickness={0.5}
+                  cellColor="#ff8020"
+                  sectionSize={100}
+                  sectionThickness={1.5}
+                  sectionColor="#ff8040"
+                  fadeDistance={600}
+                  infiniteGrid={false}
+                />
+                
+                {/* Create boundary markers at the corners of map */}
+                <mesh position={[MAP_SIZE, MAP_SIZE, MAP_SIZE]}>
+                  <sphereGeometry args={[5, 16, 16]} />
+                  <meshStandardMaterial color="red" emissive="red" emissiveIntensity={0.5} />
+                </mesh>
+                
+                <mesh position={[-MAP_SIZE, MAP_SIZE, MAP_SIZE]}>
+                  <sphereGeometry args={[5, 16, 16]} />
+                  <meshStandardMaterial color="green" emissive="green" emissiveIntensity={0.5} />
+                </mesh>
+                
+                <mesh position={[MAP_SIZE, MAP_SIZE, -MAP_SIZE]}>
+                  <sphereGeometry args={[5, 16, 16]} />
+                  <meshStandardMaterial color="blue" emissive="blue" emissiveIntensity={0.5} />
+                </mesh>
+                
+                <mesh position={[-MAP_SIZE, MAP_SIZE, -MAP_SIZE]}>
+                  <sphereGeometry args={[5, 16, 16]} />
+                  <meshStandardMaterial color="yellow" emissive="yellow" emissiveIntensity={0.5} />
+                </mesh>
+                
+                <mesh position={[MAP_SIZE, -MAP_SIZE, MAP_SIZE]}>
+                  <sphereGeometry args={[5, 16, 16]} />
+                  <meshStandardMaterial color="purple" emissive="purple" emissiveIntensity={0.5} />
+                </mesh>
+                
+                <mesh position={[-MAP_SIZE, -MAP_SIZE, MAP_SIZE]}>
+                  <sphereGeometry args={[5, 16, 16]} />
+                  <meshStandardMaterial color="cyan" emissive="cyan" emissiveIntensity={0.5} />
+                </mesh>
+                
+                <mesh position={[MAP_SIZE, -MAP_SIZE, -MAP_SIZE]}>
+                  <sphereGeometry args={[5, 16, 16]} />
+                  <meshStandardMaterial color="magenta" emissive="magenta" emissiveIntensity={0.5} />
+                </mesh>
+                
+                <mesh position={[-MAP_SIZE, -MAP_SIZE, -MAP_SIZE]}>
+                  <sphereGeometry args={[5, 16, 16]} />
+                  <meshStandardMaterial color="white" emissive="white" emissiveIntensity={0.5} />
+                </mesh>
+              </>
+            )}
+            
+            {/* Visual debug helpers - keep existing ones */}
             <axesHelper position={[0, 0, 0]} args={[200]} />
             <gridHelper position={[0, -20, 0]} args={[500, 50, 0x00ff00, 0x222222]} />
             
-            {/* Additional reference objects to provide landmarks */}
+            {/* Additional reference objects - keep existing ones */}
             <mesh position={[50, 0, 0]}>
               <sphereGeometry args={[5, 16, 16]} />
               <meshStandardMaterial color="red" />
@@ -240,9 +337,8 @@ const GameScene = () => {
               <meshStandardMaterial color="purple" />
             </mesh>
             
-            {/* Temporarily removed AsteroidField - will add back when fixed
-            {!gameOver && <AsteroidField count={asteroidCount} radius={100} />}
-            */}
+            {/* Uncomment AsteroidField with the expanded map size */}
+            {!gameOver && <AsteroidField count={asteroidCount} radius={MAP_SIZE} />}
           </Suspense>
         </Physics>
         

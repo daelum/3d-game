@@ -6,7 +6,7 @@ interface AsteroidFieldProps {
   radius?: number;
 }
 
-const AsteroidField = ({ count = 20, radius = 30 }: AsteroidFieldProps) => {
+const AsteroidField = ({ count = 20, radius = 200 }: AsteroidFieldProps) => {
   // Generate asteroid data with memoization to avoid recreating on each render
   const asteroids = useMemo(() => {
     return Array.from({ length: count }, (_, i) => {
