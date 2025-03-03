@@ -24,17 +24,20 @@ const CollisionDetector = ({ onCollision }: { onCollision: () => void }) => {
 };
 
 // Enhanced StarField that creates a more immersive space environment
-const EnhancedStarField = () => {
+const EnhancedStarField = ({ mapSize }: { mapSize: number }) => {
   return (
     <>
       {/* Distant stars - small and numerous */}
-      <Stars radius={300} depth={100} count={10000} factor={4} saturation={0} fade speed={0.5} />
+      <Stars radius={800} depth={200} count={25000} factor={4} saturation={0} fade speed={0.5} />
       
       {/* Medium distance stars - slightly larger */}
-      <Stars radius={150} depth={50} count={2000} factor={8} saturation={0.5} fade speed={0.7} />
+      <Stars radius={500} depth={150} count={7000} factor={8} saturation={0.5} fade speed={0.7} />
       
       {/* Nearby stars - fewer but brighter */}
-      <Stars radius={70} depth={25} count={500} factor={12} saturation={1} fade speed={1} />
+      <Stars radius={300} depth={100} count={2000} factor={12} saturation={1} fade speed={1} />
+      
+      {/* Additional star clusters to ensure coverage around the map edges */}
+      <Stars radius={mapSize * 1.5} depth={50} count={3000} factor={10} saturation={0.8} fade speed={0.3} />
     </>
   );
 };
@@ -48,10 +51,10 @@ const GameScene = () => {
       step: 0.05,
     },
     asteroidCount: {
-      value: 40,
+      value: 200,
       min: 0,
-      max: 200,
-      step: 5,
+      max: 1000,
+      step: 20,
     },
     showMapGrid: {
       value: true,
@@ -60,7 +63,7 @@ const GameScene = () => {
   });
 
   // Define map size constants
-  const MAP_SIZE = 250; // To match the asteroid reset limit
+  const MAP_SIZE = 400; // Increased from 250 to make the playable area larger
 
   // Game state
   const [score, setScore] = useState(0);
@@ -68,6 +71,9 @@ const GameScene = () => {
   const [gameOver, setGameOver] = useState(false);
   const [damageCooldown, setDamageCooldown] = useState(false);
   const [speed, setSpeed] = useState(0);
+  
+  // Add damage flash effect for the UI
+  const [damageFlash, setDamageFlash] = useState(0);
 
   // Add state for the click-to-play message
   const [showClickToPlay, setShowClickToPlay] = useState(true);
@@ -75,9 +81,26 @@ const GameScene = () => {
   // Add state for monitoring throttle from SpaceFighter
   const [currentThrottle, setCurrentThrottle] = useState(0);
   
+  // Add state for tracking ship orientation
+  const [shipState, setShipState] = useState({
+    pitch: 0,
+    yaw: 0,
+    roll: 0
+  });
+
   // Function to update throttle from SpaceFighter
   const updateThrottle = (value: number) => {
     setCurrentThrottle(value);
+  };
+  
+  // Function to update ship orientation from SpaceFighter
+  const updateShipOrientation = (pitch: number, yaw: number, roll: number) => {
+    setShipState({
+      // Convert radians to degrees for display
+      pitch: (pitch * 180 / Math.PI) % 360,
+      yaw: (yaw * 180 / Math.PI) % 360,
+      roll: (roll * 180 / Math.PI) % 360
+    });
   };
 
   // Increment score based on distance traveled (speed)
@@ -105,17 +128,39 @@ const GameScene = () => {
     setGameOver(false);
   };
   
-  // Handle collision
+  // Handle general collision
   const handleCollision = () => {
     if (!damageCooldown && !gameOver) {
-      // Apply damage
-      setHealth(prevHealth => Math.max(0, prevHealth - 10));
+      // Apply smaller damage for general collisions
+      setHealth(prevHealth => Math.max(0, prevHealth - 5));
       
       // Set cooldown to prevent taking damage too quickly
       setDamageCooldown(true);
       setTimeout(() => {
         setDamageCooldown(false);
       }, 1000);
+    }
+  };
+  
+  // New function to handle asteroid collision with specific damage
+  const handleAsteroidDamage = (damageAmount: number) => {
+    if (!damageCooldown && !gameOver) {
+      console.log(`Player taking ${damageAmount}% damage from asteroid collision`);
+      
+      // Apply damage based on asteroid size
+      setHealth(prevHealth => Math.max(0, prevHealth - damageAmount));
+      
+      // Show damage flash
+      setDamageFlash(1.0);
+      setTimeout(() => setDamageFlash(0), 500);
+      
+      // Set cooldown to prevent taking damage too quickly
+      setDamageCooldown(true);
+      setTimeout(() => {
+        setDamageCooldown(false);
+      }, 1500); // Longer cooldown for asteroid hits
+      
+      // Add screen shake or other effects here
     }
   };
 
@@ -140,39 +185,66 @@ const GameScene = () => {
         {/* Cockpit HUD effect */}
         <div className="cockpit-hud"></div>
         
+        {/* Damage flash overlay */}
+        {damageFlash > 0 && <div className="damage-flash"></div>}
+        
         {/* Crosshair */}
         <div className="crosshair"></div>
         
-        <div className="score">Score: {score}</div>
-        
-        <div className="health-bar">
-          <div 
-            className="health-bar-fill" 
-            style={{ width: `${health}%` }}
-          ></div>
-        </div>
-        
-        {/* Add throttle display */}
-        <div className="throttle-indicator">
-          <div className="throttle-label">THROTTLE</div>
-          <div className="throttle-bar">
-            <div 
-              className="throttle-bar-fill" 
-              style={{ width: `${currentThrottle}%` }}
-            ></div>
+        {/* Consolidated HUD Panel */}
+        <div className="consolidated-hud-panel">
+          {/* Ship Status Section */}
+          <div className="hud-section status-section">
+            <div className="hud-section-title">SHIP STATUS</div>
+            <div className="status-row">
+              <span>HULL:</span>
+              <div className="status-bar">
+                <div 
+                  className={`status-bar-fill ${
+                    health > 70 ? 'high-health' :
+                    health > 30 ? 'medium-health' : 'low-health'
+                  }`}
+                  style={{ width: `${health}%` }}
+                ></div>
+              </div>
+              <span className="status-value">{health}%</span>
+            </div>
+            <div className="status-row">
+              <span>THROT:</span>
+              <div className="status-bar">
+                <div 
+                  className="status-bar-fill"
+                  style={{ width: `${currentThrottle}%` }}
+                ></div>
+              </div>
+              <span className="status-value">{currentThrottle}%</span>
+            </div>
+            <div className="status-row">
+              <span>SCORE:</span>
+              <span className="status-value">{score}</span>
+            </div>
           </div>
-          <div className="throttle-value">{currentThrottle}%</div>
-        </div>
-        
-        <div className="controls-help">
-          <p>↑/↓: Pitch Up/Down</p>
-          <p>←/→: Yaw Left/Right</p>
-          <p>A/D: Roll Left/Right</p>
-          <p>W: Increase Throttle</p>
-          <p>S: Decrease Throttle</p>
-          <p>SHIFT: Boost Speed</p>
-          <p>V: Toggle View</p>
-          <p>R: Reset Ship</p>
+          
+          {/* Orientation Section */}
+          <div className="hud-section orientation-section">
+            <div className="hud-section-title">ORIENTATION</div>
+            <div className="orientation-values">
+              <div>Pitch: <span className="value-text">{(shipState?.pitch || 0).toFixed(1)}°</span></div>
+              <div>Yaw: <span className="value-text">{(shipState?.yaw || 0).toFixed(1)}°</span></div>
+              <div>Roll: <span className="value-text">{(shipState?.roll || 0).toFixed(1)}°</span></div>
+            </div>
+          </div>
+          
+          {/* Controls Section */}
+          <div className="hud-section controls-section">
+            <div className="hud-section-title">CONTROLS</div>
+            <div className="controls-grid">
+              <div>↑/↓:</div><div>Pitch</div><div>←/→:</div><div>Yaw</div>
+              <div>A/D:</div><div>Roll</div><div>W/S:</div><div>Throttle</div>
+              <div>SHIFT:</div><div>Boost</div><div>SPACE:</div><div>Fire</div>
+              <div>V:</div><div>View</div><div>R:</div><div>Reset</div>
+            </div>
+          </div>
         </div>
         
         {gameOver && (
@@ -220,7 +292,13 @@ const GameScene = () => {
         <Physics debug={true} timeStep="vary" gravity={[0, 0, 0]}>
           <CollisionDetector onCollision={handleCollision} />
           <Suspense fallback={null}>
-            <SpaceFighter rotation={[0, 0, 0]} onThrottleChange={updateThrottle} />
+            <SpaceFighter 
+              rotation={[0, 0, 0]} 
+              onThrottleChange={updateThrottle}
+              onTakeDamage={handleAsteroidDamage}
+              onCollision={handleCollision}
+              onOrientationChange={updateShipOrientation}
+            />
             
             {/* 3D Map Grid visualization */}
             {showMapGrid && (
@@ -229,13 +307,13 @@ const GameScene = () => {
                 <Grid 
                   position={[0, 0, 0]}
                   args={[MAP_SIZE * 2, MAP_SIZE * 2]} 
-                  cellSize={20}
-                  cellThickness={0.5}
+                  cellSize={40}
+                  cellThickness={0.6}
                   cellColor="#2080ff"
-                  sectionSize={100}
-                  sectionThickness={1.5}
+                  sectionSize={200}
+                  sectionThickness={1.8}
                   sectionColor="#4080ff"
-                  fadeDistance={600}
+                  fadeDistance={1000}
                   infiniteGrid={false}
                 />
                 
@@ -244,13 +322,13 @@ const GameScene = () => {
                   position={[0, 0, 0]}
                   rotation={[Math.PI / 2, 0, 0]}
                   args={[MAP_SIZE * 2, MAP_SIZE * 2]}
-                  cellSize={20}
-                  cellThickness={0.5}
+                  cellSize={40}
+                  cellThickness={0.6}
                   cellColor="#20ff80"
-                  sectionSize={100}
-                  sectionThickness={1.5}
+                  sectionSize={200}
+                  sectionThickness={1.8}
                   sectionColor="#40ff80"
-                  fadeDistance={600}
+                  fadeDistance={1000}
                   infiniteGrid={false}
                 />
                 
@@ -259,13 +337,13 @@ const GameScene = () => {
                   position={[0, 0, 0]}
                   rotation={[0, 0, Math.PI / 2]}
                   args={[MAP_SIZE * 2, MAP_SIZE * 2]}
-                  cellSize={20}
-                  cellThickness={0.5}
+                  cellSize={40}
+                  cellThickness={0.6}
                   cellColor="#ff8020"
-                  sectionSize={100}
-                  sectionThickness={1.5}
+                  sectionSize={200}
+                  sectionThickness={1.8}
                   sectionColor="#ff8040"
-                  fadeDistance={600}
+                  fadeDistance={1000}
                   infiniteGrid={false}
                 />
                 
@@ -313,26 +391,26 @@ const GameScene = () => {
             )}
             
             {/* Visual debug helpers - keep existing ones */}
-            <axesHelper position={[0, 0, 0]} args={[200]} />
-            <gridHelper position={[0, -20, 0]} args={[500, 50, 0x00ff00, 0x222222]} />
+            <axesHelper position={[0, 0, 0]} args={[400]} />
+            <gridHelper position={[0, -20, 0]} args={[MAP_SIZE * 2, 80, 0x00ff00, 0x222222]} />
             
             {/* Additional reference objects - keep existing ones */}
-            <mesh position={[50, 0, 0]}>
+            <mesh position={[100, 0, 0]}>
               <sphereGeometry args={[5, 16, 16]} />
               <meshStandardMaterial color="red" />
             </mesh>
             
-            <mesh position={[0, 0, 50]}>
+            <mesh position={[0, 0, 100]}>
               <sphereGeometry args={[5, 16, 16]} />
               <meshStandardMaterial color="blue" />
             </mesh>
             
-            <mesh position={[-50, 0, 0]}>
+            <mesh position={[-100, 0, 0]}>
               <sphereGeometry args={[5, 16, 16]} />
               <meshStandardMaterial color="yellow" />
             </mesh>
             
-            <mesh position={[0, 0, -50]}>
+            <mesh position={[0, 0, -100]}>
               <sphereGeometry args={[5, 16, 16]} />
               <meshStandardMaterial color="purple" />
             </mesh>
@@ -342,7 +420,7 @@ const GameScene = () => {
           </Suspense>
         </Physics>
         
-        <EnhancedStarField />
+        <EnhancedStarField mapSize={MAP_SIZE} />
         <Environment preset="night" />
         
         <Stats />

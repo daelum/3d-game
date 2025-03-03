@@ -4,6 +4,7 @@ import { useRef, useState, useEffect } from 'react';
 import * as THREE from 'three';
 import { GLTF } from 'three-stdlib';
 import { RigidBody, useRapier } from '@react-three/rapier';
+import Projectile from './Projectile';
 
 // Define the type for our GLTF result
 type GLTFResult = GLTF & {
@@ -20,6 +21,9 @@ interface SpaceFighterProps {
   rotation?: [number, number, number];
   scale?: number;
   onThrottleChange?: (value: number) => void; // Add optional callback for throttle changes
+  onTakeDamage?: (amount: number) => void; // Add callback for taking damage
+  onCollision?: () => void; // Add callback for general collision detection
+  onOrientationChange?: (pitch: number, yaw: number, roll: number) => void; // Add callback for orientation changes
 }
 
 const SpaceFighter = ({
@@ -27,6 +31,9 @@ const SpaceFighter = ({
   rotation = [0, 0, 0],
   scale = 1,
   onThrottleChange,
+  onTakeDamage,
+  onCollision,
+  onOrientationChange,
 }: SpaceFighterProps) => {
   // Load the ship model
   const { nodes, materials } = useGLTF('/models/ship.gltf') as GLTFResult;
@@ -46,6 +53,13 @@ const SpaceFighter = ({
     rollRight: false,  // D key
     boostSpeed: false, // Shift key
   });
+  
+  // Add gun and projectile state
+  const [isFiring, setIsFiring] = useState(false);
+  const [projectiles, setProjectiles] = useState<{id: number, position: [number, number, number], direction: THREE.Vector3}[]>([]);
+  const nextProjectileId = useRef(0);
+  const lastFireTime = useRef(0);
+  const fireRate = 200; // milliseconds between shots (5 shots per second)
   
   // Throttle system (0-100%)
   const [throttle, setThrottle] = useState(0);
@@ -144,6 +158,12 @@ const SpaceFighter = ({
             console.log('Ship position, rotation, and throttle reset');
           }
           break;
+        
+        // Add space bar for firing
+        case ' ':
+          setIsFiring(true);
+          console.log('Firing gun');
+          break;
       }
     };
     
@@ -180,6 +200,12 @@ const SpaceFighter = ({
         case 'shift':
           setMoveDirection(prev => ({ ...prev, boostSpeed: false }));
           console.log('Speed boost deactivated');
+          break;
+        
+        // Release firing on space bar up
+        case ' ':
+          setIsFiring(false);
+          console.log('Stopped firing');
           break;
       }
     };
@@ -221,61 +247,55 @@ const SpaceFighter = ({
     }
   }, [throttle, onThrottleChange]);
   
-  // Add a debug display for orientation
-  useEffect(() => {
-    // Create a debug orientation display that updates with rotation
-    const createOrientationDisplay = () => {
-      if (typeof document === 'undefined') return;
-      
-      let display = document.getElementById('orientation-debug');
-      if (!display) {
-        display = document.createElement('div');
-        display.id = 'orientation-debug';
-        display.style.position = 'absolute';
-        display.style.bottom = '10px';
-        display.style.left = '10px';
-        display.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-        display.style.color = '#0f0';
-        display.style.padding = '10px';
-        display.style.fontFamily = 'monospace';
-        display.style.fontSize = '12px';
-        display.style.borderRadius = '5px';
-        display.style.border = '1px solid #0f0';
-        display.style.zIndex = '1000';
-        document.body.appendChild(display);
-      }
-      
-      // Format rotational values for display
-      const pitch = (shipRotation.pitch * 180 / Math.PI) % 360;
-      const yaw = (shipRotation.yaw * 180 / Math.PI) % 360;
-      const roll = (shipRotation.roll * 180 / Math.PI) % 360;
-      
-      // Update the display content
-      display.innerHTML = `
-        <div><strong>ORIENTATION (deg):</strong></div>
-        <div>Pitch: ${pitch.toFixed(2)}°</div>
-        <div>Yaw: ${yaw.toFixed(2)}°</div>
-        <div>Roll: ${roll.toFixed(2)}°</div>
-      `;
+  // Function to create a new projectile
+  const fireProjectile = () => {
+    if (!rigidBodyRef.current) return;
+    
+    const now = Date.now();
+    if (now - lastFireTime.current < fireRate) return; // Limit fire rate
+    
+    // Get the current ship position and rotation
+    const shipPosition = rigidBodyRef.current.translation();
+    
+    // Calculate projectile direction based on ship's orientation
+    const forwardDirection = new THREE.Vector3(0, 0, -1);
+    const shipDirection = forwardDirection.clone().applyEuler(
+      new THREE.Euler(shipRotation.pitch, shipRotation.yaw, shipRotation.roll)
+    );
+    
+    // Create the projectile slightly ahead of the ship
+    const projectilePosition: [number, number, number] = [
+      shipPosition.x + shipDirection.x * 2, 
+      shipPosition.y + shipDirection.y * 2, 
+      shipPosition.z + shipDirection.z * 2
+    ];
+    
+    // Add the new projectile to state
+    const newProjectile = {
+      id: nextProjectileId.current++,
+      position: projectilePosition,
+      direction: shipDirection
     };
     
-    // Update the display
-    createOrientationDisplay();
+    setProjectiles(prevProjectiles => [...prevProjectiles, newProjectile]);
     
-    return () => {
-      // Clean up the display when component unmounts
-      if (typeof document !== 'undefined') {
-        const display = document.getElementById('orientation-debug');
-        if (display) {
-          display.remove();
-        }
-      }
-    };
-  }, [shipRotation]);
+    // Play gun sound effect
+    // You could add sound effects here in the future
+    
+    // Update last fire time
+    lastFireTime.current = now;
+    
+    console.log('Projectile fired:', newProjectile);
+  };
   
   // Movement and animation logic
   useFrame((state, delta) => {
     if (!rigidBodyRef.current || !groupRef.current) return;
+    
+    // Check for firing
+    if (isFiring) {
+      fireProjectile();
+    }
     
     // Calculate new rotation based on input
     let newPitch = shipRotation.pitch;
@@ -349,6 +369,16 @@ const SpaceFighter = ({
     // Set the ship's new position
     rigidBodyRef.current.setTranslation(newPosition, true);
     
+    // Report throttle changes to parent component
+    if (onThrottleChange) {
+      onThrottleChange(throttle);
+    }
+    
+    // Report orientation changes to parent component
+    if (onOrientationChange) {
+      onOrientationChange(newPitch, newYaw, newRoll);
+    }
+    
     // Debug position occasionally
     if (Math.random() < 0.01) {
       console.log('Ship position:', newPosition);
@@ -391,44 +421,153 @@ const SpaceFighter = ({
     }
   });
 
+  // Function to handle projectile hit
+  const handleProjectileHit = () => {
+    console.log('Projectile hit something!');
+    // Add a small score increment for hits
+    // You could add UI feedback here in the future
+  };
+  
+  // Function to remove a projectile by ID
+  const removeProjectile = (id: number) => {
+    setProjectiles(prevProjectiles => 
+      prevProjectiles.filter(projectile => projectile.id !== id)
+    );
+  };
+
+  // Add damage flash effect
+  const [damageEffect, setDamageEffect] = useState(0);
+  const lastCollisionTime = useRef(0);
+  const collisionCooldown = 1000; // 1 second cooldown between collisions
+  
+  // Function to handle collision with asteroids
+  const handleCollision = (other: any) => {
+    const now = Date.now();
+    
+    // Apply cooldown to prevent multiple collisions at once
+    if (now - lastCollisionTime.current < collisionCooldown) {
+      return;
+    }
+    
+    // Check if we hit an asteroid by looking for asteroidId property
+    if (other && other.asteroidId !== undefined) {
+      console.log("Ship collided with asteroid:", other.asteroidId);
+      
+      // Get the asteroid size if possible
+      let asteroidSize = 1; // Default size if we can't determine
+      if (typeof other.getAsteroidSize === 'function') {
+        asteroidSize = other.getAsteroidSize();
+      }
+      
+      // Calculate damage based on asteroid size
+      // Larger asteroids cause more damage (50-100% for large, less for small)
+      const baseDamage = asteroidSize >= 1.0 ? 
+        Math.floor(Math.random() * 51) + 50 : // 50-100% for large asteroids
+        Math.floor(asteroidSize * 50); // Scaled damage for smaller asteroids/fragments
+      
+      console.log(`Taking ${baseDamage}% damage from asteroid of size ${asteroidSize}`);
+      
+      // Apply damage effect
+      setDamageEffect(1.0);
+      
+      // Call damage callback
+      if (onTakeDamage) {
+        onTakeDamage(baseDamage);
+      }
+      
+      // General collision notification
+      if (onCollision) {
+        onCollision();
+      }
+      
+      // Set cooldown timestamp
+      lastCollisionTime.current = now;
+    }
+  };
+  
+  // Reset damage effect after a short time
+  useEffect(() => {
+    if (damageEffect > 0) {
+      const timer = setTimeout(() => {
+        setDamageEffect(0);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [damageEffect]);
+
   return (
-    <RigidBody
-      ref={rigidBodyRef}
-      position={position}
-      type="dynamic"
-      colliders="cuboid"
-      linearDamping={0.5}
-      angularDamping={0.5}
-    >
-      <group
-        ref={groupRef}
-        scale={scale}
-      >
-        <mesh
-          ref={shipModelRef}
-          geometry={nodes.model.geometry}
-          material={materials.CustomMaterial}
-          castShadow
-          receiveShadow
-          // Only hide the ship model in first-person view
-          visible={!firstPersonView}
+    <>
+      {/* Render all active projectiles */}
+      {projectiles.map(projectile => (
+        <Projectile
+          key={projectile.id}
+          position={projectile.position}
+          direction={projectile.direction}
+          damageAmount={10} // Increased damage to make destruction more obvious
+          speed={50} // Faster projectiles
+          onHit={() => {
+            handleProjectileHit();
+            removeProjectile(projectile.id);
+          }}
         />
-        
-        {/* Simple spaceship model for debugging in third-person view */}
-        {!firstPersonView && (
-          <>
-            <mesh position={[0, 0, 0]}>
-              <coneGeometry args={[0.5, 2, 8]} />
-              <meshStandardMaterial color="cyan" />
-            </mesh>
-            <mesh position={[0, 0, 0.5]}>
-              <boxGeometry args={[1.2, 0.2, 1]} />
-              <meshStandardMaterial color="gray" />
-            </mesh>
-          </>
-        )}
-      </group>
-    </RigidBody>
+      ))}
+      
+      <RigidBody
+        ref={rigidBodyRef}
+        position={position}
+        type="dynamic"
+        colliders="cuboid"
+        linearDamping={0.5}
+        angularDamping={0.5}
+        onIntersectionEnter={({ other }) => {
+          // Check if what we hit has properties
+          // @ts-ignore - accessing custom properties
+          if (other && other.rigidBody) {
+            // @ts-ignore - accessing custom properties
+            handleCollision(other.rigidBody);
+          }
+        }}
+      >
+        <group
+          ref={groupRef}
+          scale={scale}
+        >
+          <mesh
+            ref={shipModelRef}
+            geometry={nodes.model.geometry}
+            material={materials.CustomMaterial}
+            castShadow
+            receiveShadow
+            // Only hide the ship model in first-person view
+            visible={!firstPersonView}
+          />
+          
+          {/* Simple spaceship model for debugging in third-person view */}
+          {!firstPersonView && (
+            <>
+              <mesh position={[0, 0, 0]}>
+                <coneGeometry args={[0.5, 2, 8]} />
+                <meshStandardMaterial color="cyan" />
+              </mesh>
+              <mesh position={[0, 0, 0.5]}>
+                <boxGeometry args={[1.2, 0.2, 1]} />
+                <meshStandardMaterial color="gray" />
+              </mesh>
+            </>
+          )}
+          
+          {/* Damage effect overlay */}
+          {damageEffect > 0 && (
+            <pointLight 
+              color="#ff0000" 
+              intensity={damageEffect * 5} 
+              distance={3} 
+              position={[0, 0, 0]}
+            />
+          )}
+        </group>
+      </RigidBody>
+    </>
   );
 };
 
