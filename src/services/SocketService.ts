@@ -34,19 +34,21 @@ class SocketService {
   connect() {
     if (this.socket) return;
 
-    // In development, connect to the local server
-    // In production, connect to the DigitalOcean server
-    if (this.socket) return;
-
-    const serverUrl = import.meta.env.PROD 
-      ? '209.38.83.148:3000'  // Just host:port without protocol
-      : 'localhost:3000';
+    let serverUrl;
     
-    console.log(`Attempting to connect to socket server at ${serverUrl}`);
+    if (import.meta.env.PROD) {
+      // For production, use the explicit ws:// protocol to connect to the server
+      serverUrl = 'ws://209.38.83.148:3000';
+      console.log(`Connecting to: ${serverUrl} (production)`);
+    } else {
+      // In development, use localhost
+      serverUrl = 'http://localhost:3000';
+      console.log(`Connecting to: ${serverUrl} (development)`);
+    }
     
     this.socket = io(serverUrl, {
       transports: ['websocket'],
-      secure: false
+      withCredentials: false
     });
     
     // Add connection status listeners
