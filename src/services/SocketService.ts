@@ -37,8 +37,8 @@ class SocketService {
     let serverUrl;
     
     if (import.meta.env.PROD) {
-      // Use the secure domain with wss:// protocol
-      serverUrl = 'https://lost-in-space.today';
+      // Use api subdomain for WebSocket server
+      serverUrl = 'https://api.lost-in-space.today';
       console.log(`Connecting to: ${serverUrl} (production)`);
     } else {
       // In development, use localhost
