@@ -1,32 +1,33 @@
-# Space Asteroid Explorer - Flight Simulator
+# Space Shooter Multiplayer Game
 
-A 3D space flight simulator built with React, Three.js, and React Three Fiber, where you pilot a spaceship through an immersive asteroid field in first-person view.
+A 3D multiplayer space shooter game built with React Three Fiber, featuring asteroid fields, ship controls, and multiplayer functionality.
 
 ## Features
 
-- First-person cockpit view for immersive space flight
-- Real-time flight controls with pitch, yaw, and roll
-- Physics-based movement and collisions
-- Dense asteroid field to navigate through
-- Multi-layered star field for deep space immersion
-- Player health and score tracking
-- Game over system with restart functionality
+- **3D Space Environment**: Navigate through a beautiful space environment with stars and asteroid fields
+- **Spacecraft Controls**: Control your spaceship with intuitive keyboard controls
+- **Multiplayer**: Play with friends in the same space environment
+- **Projectile System**: Shoot at asteroids and other players
+- **Collision Detection**: Realistic collision handling for asteroids and ships
+- **Score System**: Earn points by destroying asteroids and eliminating other players
+- **Health Management**: Monitor your ship's health and avoid damage
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js (v14 or higher)
+- Node.js (v14.x or later)
 - npm or yarn
 
 ### Installation
 
-1. Clone this repository
-2. Navigate to the project directory:
+1. Clone the repository:
    ```bash
+   git clone <repository-url>
    cd my-game
    ```
-3. Install dependencies:
+
+2. Install dependencies:
    ```bash
    npm install
    # or
@@ -35,7 +36,9 @@ A 3D space flight simulator built with React, Three.js, and React Three Fiber, w
 
 ### Running the Game
 
-From the `my-game` directory:
+#### Development Mode (Single Player)
+
+To run the game in development mode:
 
 ```bash
 npm run dev
@@ -43,58 +46,66 @@ npm run dev
 yarn dev
 ```
 
-Open your browser and visit http://localhost:5173
+This will start a Vite development server at http://localhost:5173.
 
-## Flight Controls
+#### Multiplayer Mode
 
-- **W/S**: Pitch down/up (nose down/up)
-- **A/D**: Yaw left/right (turn left/right)
-- **Q/E**: Roll left/right (barrel roll)
-- **R**: Reset ship position and orientation
+To run the game in multiplayer mode:
 
-Your spaceship automatically moves forward, and you control its direction with these flight controls.
+1. Build the game and start the multiplayer server:
+   ```bash
+   npm run start
+   # or
+   yarn start
+   ```
 
-## Game Mechanics
+2. The game will be available at http://localhost:3000
 
-- Navigate through dense asteroid fields
-- Each collision with an asteroid reduces your health
-- Your score increases as you travel through space
-- Game ends when your health reaches zero
-- Click "RESTART" to play again
+3. Share the URL with friends on the same network, or use port forwarding to play across the internet.
 
-## Project Structure
+## Game Controls
 
-```
-my-game/
-├── public/         # Static assets
-├── src/            # Source code
-│   ├── components/ # React components
-│   │   ├── AsteroidField.tsx  # Asteroid generation
-│   │   ├── SpaceFighter.tsx   # Player spaceship with controls
-│   ├── Game.tsx     # Main game component
-│   ├── index.tsx    # Application entry point
-│   └── styles.css   # Global styles
-└── ...
-```
+- **W/S**: Increase/decrease throttle (forward/backward)
+- **Arrow Keys**: Control pitch (up/down) and yaw (left/right)
+- **A/D**: Roll left/right
+- **Spacebar**: Fire projectiles
+- **R**: Reset the view
+- **Shift**: Boost speed (hold)
+- **V**: Toggle between first-person and third-person views
 
-## Built With
+## Multiplayer Features
 
-- [React](https://reactjs.org/) - UI Library
-- [Three.js](https://threejs.org/) - 3D Graphics Library
-- [React Three Fiber](https://docs.pmnd.rs/react-three-fiber) - React renderer for Three.js
-- [React Three Rapier](https://github.com/pmndrs/react-three-rapier) - Physics for React Three Fiber
-- [Drei](https://github.com/pmndrs/drei) - Useful helpers for React Three Fiber
-- [Vite](https://vitejs.dev/) - Frontend build tool
+- Real-time player position synchronization
+- Player scores visible to all players
+- Projectile synchronization between players
+- Health synchronization and damage reporting
+- Respawn system when players are eliminated
 
-## Future Enhancements
+## Development
 
-- Weapons and shooting mechanics
-- Enemy spacecraft to engage with
-- Different space environments to explore
-- Power-ups and ship upgrades
-- Advanced flight control options
-- Multiplayer dogfighting mode
+### Project Structure
+
+- `src/components/`: React components for the game
+- `src/services/`: Service modules including Socket.io communication
+- `server.js`: Multiplayer server implementation
+
+### Adding New Features
+
+The codebase is designed to be modular and extensible. Here are some areas to consider for expansion:
+
+- Add more spacecraft types with different abilities
+- Create new weapon types with different damage profiles
+- Implement power-ups and special abilities
+- Design more complex space environments with obstacles and hazards
+
+## Technology Stack
+
+- React and React Three Fiber for 3D rendering
+- Three.js for 3D graphics
+- Rapier for physics
+- Socket.io for real-time multiplayer communication
+- Express for the server
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+MIT 

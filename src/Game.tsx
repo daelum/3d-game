@@ -1,10 +1,14 @@
 import { Physics, RigidBody, CuboidCollider, RapierRigidBody, useRapier } from '@react-three/rapier';
 import { Stats, useGLTF, Stars, Environment, Sky, Grid } from '@react-three/drei';
+import { Perf } from 'r3f-perf';
 import SpaceFighter from './components/SpaceFighter';
 import AsteroidField from './components/AsteroidField'; // Uncommented to use it
 import { useControls } from 'leva';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Suspense, useState, useEffect, useRef } from 'react';
+import socketService, { PlayerData, ProjectileData } from './services/SocketService';
+import OtherPlayer from './components/OtherPlayer';
+import DebugPanel from './components/DebugPanel';
 
 useGLTF.preload('/models/ship.gltf');
 
@@ -24,26 +28,36 @@ const CollisionDetector = ({ onCollision }: { onCollision: () => void }) => {
 };
 
 // Enhanced StarField that creates a more immersive space environment
-const EnhancedStarField = ({ mapSize }: { mapSize: number }) => {
+const EnhancedStarField = ({ mapSize, quality = 'medium' }: { mapSize: number, quality?: string }) => {
+  // Scale star counts based on quality setting
+  const getStarCount = (baseCount: number) => {
+    switch (quality) {
+      case 'low': return Math.floor(baseCount * 0.3);
+      case 'medium': return Math.floor(baseCount * 0.6);
+      case 'high': return baseCount;
+      default: return Math.floor(baseCount * 0.6);
+    }
+  };
+
   return (
     <>
       {/* Distant stars - small and numerous */}
-      <Stars radius={800} depth={200} count={25000} factor={4} saturation={0} fade speed={0.5} />
+      <Stars radius={800} depth={200} count={getStarCount(25000)} factor={4} saturation={0} fade speed={0.5} />
       
       {/* Medium distance stars - slightly larger */}
-      <Stars radius={500} depth={150} count={7000} factor={8} saturation={0.5} fade speed={0.7} />
+      <Stars radius={500} depth={150} count={getStarCount(7000)} factor={8} saturation={0.5} fade speed={0.7} />
       
       {/* Nearby stars - fewer but brighter */}
-      <Stars radius={300} depth={100} count={2000} factor={12} saturation={1} fade speed={1} />
+      <Stars radius={300} depth={100} count={getStarCount(2000)} factor={12} saturation={1} fade speed={1} />
       
       {/* Additional star clusters to ensure coverage around the map edges */}
-      <Stars radius={mapSize * 1.5} depth={50} count={3000} factor={10} saturation={0.8} fade speed={0.3} />
+      <Stars radius={mapSize * 1.5} depth={50} count={getStarCount(3000)} factor={10} saturation={0.8} fade speed={0.3} />
     </>
   );
 };
 
 const GameScene = () => {
-  const { intensity, asteroidCount, showMapGrid } = useControls('Environment', {
+  const { intensity, asteroidCount, showMapGrid, graphicsQuality } = useControls('Environment', {
     intensity: {
       value: 0.2,
       min: 0,
@@ -51,14 +65,19 @@ const GameScene = () => {
       step: 0.05,
     },
     asteroidCount: {
-      value: 200,
+      value: 100,
       min: 0,
       max: 1000,
       step: 20,
     },
     showMapGrid: {
-      value: true,
+      value: false,
       label: 'Show 3D Map Grid'
+    },
+    graphicsQuality: {
+      value: 'medium',
+      options: ['low', 'medium', 'high'],
+      label: 'Graphics Quality'
     }
   });
 
@@ -88,6 +107,15 @@ const GameScene = () => {
     roll: 0
   });
 
+  // Fix the data structure for otherPlayers state
+  const [otherPlayers, setOtherPlayers] = useState<Map<string, PlayerData>>(new Map());
+  const [isConnected, setIsConnected] = useState(false);
+  const shipRef = useRef<any>(null);
+  const localPlayerId = useRef<string>('');
+  const lastPositionUpdate = useRef<number>(0);
+  const POSITION_UPDATE_INTERVAL = 50; // milliseconds between position updates
+  const [multiplayerReady, setMultiplayerReady] = useState(false);
+  
   // Function to update throttle from SpaceFighter
   const updateThrottle = (value: number) => {
     setCurrentThrottle(value);
@@ -128,44 +156,240 @@ const GameScene = () => {
     setGameOver(false);
   };
   
-  // Handle general collision
-  const handleCollision = () => {
-    if (!damageCooldown && !gameOver) {
-      // Apply smaller damage for general collisions
-      setHealth(prevHealth => Math.max(0, prevHealth - 5));
+  // Initialize socket connection - MOVE THIS OUTSIDE THE CONDITIONAL
+  useEffect(() => {
+    // Connect to the socket server immediately, regardless of game focus
+    console.log("Initializing socket connection...");
+    socketService.connect();
+    
+    // Add connection status listener
+    const unsubscribeConnection = socketService.on('connectionChange', (connected: boolean) => {
+      console.log(`Socket connection status changed: ${connected ? 'connected' : 'disconnected'}`);
+      setIsConnected(connected);
+      if (connected) {
+        // Only set the player ID after we're connected
+        localPlayerId.current = socketService.getSocketId();
+        console.log(`Connected to server with ID: ${localPlayerId.current}`);
+      }
+    });
+    
+    // Set up socket event listeners
+    const onPlayers = (players: PlayerData[]) => {
+      const newPlayers = new Map<string, PlayerData>();
       
-      // Set cooldown to prevent taking damage too quickly
-      setDamageCooldown(true);
-      setTimeout(() => {
-        setDamageCooldown(false);
-      }, 1000);
+      players.forEach(player => {
+        if (player.id !== localPlayerId.current) {
+          newPlayers.set(player.id, player);
+        }
+      });
+      
+      setOtherPlayers(newPlayers);
+      setMultiplayerReady(true);
+    };
+    
+    const onPlayerJoined = (player: PlayerData) => {
+      if (player.id !== localPlayerId.current) {
+        setOtherPlayers(prev => {
+          const newMap = new Map(prev);
+          newMap.set(player.id, player);
+          return newMap;
+        });
+      }
+    };
+    
+    const onPlayerMoved = (data: {
+      id: string;
+      position: [number, number, number];
+      rotation: [number, number, number];
+      throttle: number;
+    }) => {
+      if (data.id !== localPlayerId.current) {
+        setOtherPlayers(prev => {
+          const newMap = new Map(prev);
+          const player = newMap.get(data.id);
+          
+          if (player) {
+            newMap.set(data.id, {
+              ...player,
+              position: data.position,
+              rotation: data.rotation,
+              throttle: data.throttle
+            });
+          }
+          
+          return newMap;
+        });
+      }
+    };
+    
+    const onPlayerLeft = (playerId: string) => {
+      setOtherPlayers(prev => {
+        const newMap = new Map(prev);
+        newMap.delete(playerId);
+        return newMap;
+      });
+    };
+    
+    const onProjectileFired = (data: ProjectileData) => {
+      // Handle projectile fired by other players
+      // This would instantiate a projectile in the 3D scene
+      console.log('Projectile fired by another player:', data);
+    };
+    
+    const onPlayerHealthUpdated = (data: { id: string; health: number }) => {
+      if (data.id === localPlayerId.current) {
+        // Update local player health
+        setHealth(data.health);
+      } else {
+        // Update other player's health
+        setOtherPlayers(prev => {
+          const newMap = new Map(prev);
+          const player = newMap.get(data.id);
+          
+          if (player) {
+            newMap.set(data.id, {
+              ...player,
+              health: data.health
+            });
+          }
+          
+          return newMap;
+        });
+      }
+    };
+    
+    const onPlayerEliminated = (data: { id: string; eliminatedBy: string }) => {
+      if (data.eliminatedBy === localPlayerId.current) {
+        // If we eliminated someone, increment our score
+        setScore(prevScore => prevScore + 10);
+      }
+    };
+    
+    const onPlayerScoreUpdated = (data: { id: string; score: number }) => {
+      if (data.id === localPlayerId.current) {
+        // Update local player score
+        setScore(data.score);
+      } else {
+        // Update other player's score
+        setOtherPlayers(prev => {
+          const newMap = new Map(prev);
+          const player = newMap.get(data.id);
+          
+          if (player) {
+            newMap.set(data.id, {
+              ...player,
+              score: data.score
+            });
+          }
+          
+          return newMap;
+        });
+      }
+    };
+    
+    const onRespawn = (data: { position: [number, number, number]; health: number }) => {
+      // Reset player position and health after being eliminated
+      if (shipRef.current) {
+        shipRef.current.setPosition(data.position);
+      }
+      setHealth(data.health);
+    };
+    
+    // Register all event listeners
+    const unsubscribePlayers = socketService.on('players', onPlayers);
+    const unsubscribePlayerJoined = socketService.on('playerJoined', onPlayerJoined);
+    const unsubscribePlayerMoved = socketService.on('playerMoved', onPlayerMoved);
+    const unsubscribePlayerLeft = socketService.on('playerLeft', onPlayerLeft);
+    const unsubscribeProjectileFired = socketService.on('projectileFired', onProjectileFired);
+    const unsubscribePlayerHealthUpdated = socketService.on('playerHealthUpdated', onPlayerHealthUpdated);
+    const unsubscribePlayerEliminated = socketService.on('playerEliminated', onPlayerEliminated);
+    const unsubscribePlayerScoreUpdated = socketService.on('playerScoreUpdated', onPlayerScoreUpdated);
+    const unsubscribeRespawn = socketService.on('respawn', onRespawn);
+    
+    // Clean up listeners on unmount
+    return () => {
+      unsubscribeConnection();
+      unsubscribePlayers();
+      unsubscribePlayerJoined();
+      unsubscribePlayerMoved();
+      unsubscribePlayerLeft();
+      unsubscribeProjectileFired();
+      unsubscribePlayerHealthUpdated();
+      unsubscribePlayerEliminated();
+      unsubscribePlayerScoreUpdated();
+      unsubscribeRespawn();
+      
+      socketService.disconnect();
+      setIsConnected(false);
+      console.log("Cleaning up socket connection");
+    };
+  }, []); // Empty dependency array to ensure this only runs once
+  
+  // Update the server with the player's position
+  const updatePosition = (position: [number, number, number], rotation: [number, number, number], throttle: number) => {
+    const now = Date.now();
+    
+    // Throttle position updates to avoid flooding the server
+    if (now - lastPositionUpdate.current > POSITION_UPDATE_INTERVAL) {
+      socketService.updatePosition(position, rotation, throttle);
+      lastPositionUpdate.current = now;
     }
   };
   
-  // New function to handle asteroid collision with specific damage
-  const handleAsteroidDamage = (damageAmount: number) => {
-    if (!damageCooldown && !gameOver) {
-      console.log(`Player taking ${damageAmount}% damage from asteroid collision`);
-      
-      // Apply damage based on asteroid size
-      setHealth(prevHealth => Math.max(0, prevHealth - damageAmount));
-      
-      // Show damage flash
-      setDamageFlash(1.0);
-      setTimeout(() => setDamageFlash(0), 500);
-      
-      // Set cooldown to prevent taking damage too quickly
-      setDamageCooldown(true);
-      setTimeout(() => {
-        setDamageCooldown(false);
-      }, 1500); // Longer cooldown for asteroid hits
-      
-      // Add screen shake or other effects here
+  // Modified handleCollision to report damage to the server
+  const handleCollision = () => {
+    if (damageCooldown || gameOver) return;
+    
+    const damageAmount = 20; // Fixed damage amount for any collision
+    
+    // Report damage to server
+    socketService.reportDamage(damageAmount);
+    
+    setDamageCooldown(true);
+    setDamageFlash(1);
+    
+    // Local state update for responsive feedback
+    const newHealth = Math.max(0, health - damageAmount);
+    setHealth(newHealth);
+    
+    if (newHealth <= 0 && !gameOver) {
+      setGameOver(true);
     }
+    
+    setTimeout(() => {
+      setDamageCooldown(false);
+    }, 1000);
   };
-
-  // Function to add points when an asteroid is destroyed
+  
+  // Modified handleAsteroidDamage to report to the server
+  const handleAsteroidDamage = (damageAmount: number) => {
+    if (damageCooldown || gameOver) return;
+    
+    // Report damage to server
+    socketService.reportDamage(damageAmount);
+    
+    setDamageCooldown(true);
+    setDamageFlash(1);
+    
+    // Local state update for responsive feedback
+    const newHealth = Math.max(0, health - damageAmount);
+    setHealth(newHealth);
+    
+    if (newHealth <= 0 && !gameOver) {
+      setGameOver(true);
+    }
+    
+    setTimeout(() => {
+      setDamageCooldown(false);
+    }, 1000);
+  };
+  
+  // Modified handleAsteroidDestroyed to report to the server
   const handleAsteroidDestroyed = (points: number) => {
+    // Report destroyed asteroid to server
+    socketService.reportAsteroidDestroyed(points);
+    
+    // Local state update for responsive feedback
     setScore(prevScore => prevScore + points);
   };
 
@@ -183,6 +407,30 @@ const GameScene = () => {
       console.log("Game scene unmounting");
     };
   }, []);
+
+  // Make sure to update our position regularly
+  useEffect(() => {
+    if (!shipRef.current || !isConnected) return;
+    
+    const interval = setInterval(() => {
+      const position = shipRef.current.position.toArray() as [number, number, number];
+      const rotation = [
+        shipRef.current.rotation.x,
+        shipRef.current.rotation.y,
+        shipRef.current.rotation.z
+      ] as [number, number, number];
+      
+      // Call the server update method
+      socketService.updatePosition(position, rotation, currentThrottle);
+      
+      // Log position updates occasionally
+      if (Math.random() < 0.05) { // Only log 5% of updates to avoid spam
+        console.log(`Sending position update: ${position}`);
+      }
+    }, 50); // Send updates every 50ms
+    
+    return () => clearInterval(interval);
+  }, [shipRef, isConnected, currentThrottle]);
 
   return (
     <>
@@ -272,9 +520,14 @@ const GameScene = () => {
       
       <Canvas
         gl={{
-          antialias: true,
-          powerPreference: "high-performance"
+          antialias: graphicsQuality !== 'low',
+          powerPreference: "high-performance",
+          precision: graphicsQuality === 'low' ? 'lowp' : 'highp',
+          alpha: false,
+          stencil: false
         }}
+        frameloop={graphicsQuality === 'high' ? 'always' : 'demand'}
+        dpr={graphicsQuality === 'low' ? 1 : window.devicePixelRatio}
         camera={{ fov: 75, near: 0.1, far: 1000, position: [0, 0, 10] }}
         style={{ background: '#000000' }}
         tabIndex={0}
@@ -289,20 +542,25 @@ const GameScene = () => {
         <fog attach="fog" args={['#000', 50, 600]} />
         <ambientLight intensity={intensity} />
         
-        {/* Add distant light sources to simulate stars */}
         <pointLight position={[100, 100, 100]} intensity={0.5} />
         <pointLight position={[-100, -100, -100]} intensity={0.5} />
-        <pointLight position={[-100, 100, -100]} intensity={0.5} />
         
-        <Physics debug={true} timeStep="vary" gravity={[0, 0, 0]}>
+        <Physics debug={false} timeStep="vary" gravity={[0, 0, 0]} colliders={false}>
           <CollisionDetector onCollision={handleCollision} />
           <Suspense fallback={null}>
-            <SpaceFighter 
-              rotation={[0, 0, 0]} 
+            {/* Add rendering of other players if multiplayer is ready */}
+            {multiplayerReady && Array.from(otherPlayers.values()).map(player => (
+              <OtherPlayer key={player.id} player={player} />
+            ))}
+            
+            <SpaceFighter
+              ref={shipRef}
+              position={[0, 0, 0]}
               onThrottleChange={updateThrottle}
               onTakeDamage={handleAsteroidDamage}
               onCollision={handleCollision}
               onOrientationChange={updateShipOrientation}
+              onPositionChange={updatePosition} // New prop to report position to server
             />
             
             {/* 3D Map Grid visualization */}
@@ -425,15 +683,23 @@ const GameScene = () => {
               count={asteroidCount} 
               radius={MAP_SIZE} 
               onAsteroidDestroyed={handleAsteroidDestroyed}
+              quality={graphicsQuality}
             />}
           </Suspense>
         </Physics>
         
-        <EnhancedStarField mapSize={MAP_SIZE} />
+        <EnhancedStarField mapSize={MAP_SIZE} quality={graphicsQuality} />
         <Environment preset="night" />
         
-        <Stats />
+        {/* Show performance stats */}
+        <Stats showPanel={0} className="stats-panel" />
       </Canvas>
+      
+      <DebugPanel 
+        isConnected={isConnected} 
+        localPlayerId={localPlayerId.current || ""} 
+        otherPlayers={otherPlayers} 
+      />
     </>
   );
 };

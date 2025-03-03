@@ -1,6 +1,6 @@
 import { useGLTF } from '@react-three/drei';
 import { useFrame, useThree } from '@react-three/fiber';
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import * as THREE from 'three';
 import { GLTF } from 'three-stdlib';
 import { RigidBody, useRapier } from '@react-three/rapier';
@@ -24,9 +24,11 @@ interface SpaceFighterProps {
   onTakeDamage?: (amount: number) => void; // Add callback for taking damage
   onCollision?: () => void; // Add callback for general collision detection
   onOrientationChange?: (pitch: number, yaw: number, roll: number) => void; // Add callback for orientation changes
+  onPositionChange?: (position: [number, number, number], rotation: [number, number, number], throttle: number) => void; // Add callback for position changes (multiplayer)
 }
 
-const SpaceFighter = ({
+// Convert SpaceFighter to use forwardRef for multiplayer functionality
+const SpaceFighter = forwardRef<any, SpaceFighterProps>(({
   position = [0, 0, 0],
   rotation = [0, 0, 0],
   scale = 1,
@@ -34,7 +36,8 @@ const SpaceFighter = ({
   onTakeDamage,
   onCollision,
   onOrientationChange,
-}: SpaceFighterProps) => {
+  onPositionChange,
+}, ref) => {
   // Load the ship model
   const { nodes, materials } = useGLTF('/models/ship.gltf') as GLTFResult;
 
@@ -495,6 +498,38 @@ const SpaceFighter = ({
     }
   }, [damageEffect]);
 
+  // Expose methods to parent component through ref
+  useImperativeHandle(ref, () => ({
+    // Method to set the fighter's position (used when respawning)
+    setPosition: (newPosition: [number, number, number]) => {
+      if (rigidBodyRef.current) {
+        rigidBodyRef.current.setTranslation(
+          { x: newPosition[0], y: newPosition[1], z: newPosition[2] },
+          true
+        );
+      }
+    },
+    // Can add more methods here as needed
+  }));
+  
+  // Update position for multiplayer
+  useFrame(() => {
+    if (rigidBodyRef.current && onPositionChange) {
+      const worldPosition = rigidBodyRef.current.translation();
+      const worldRotation = groupRef.current ? [
+        groupRef.current.rotation.x,
+        groupRef.current.rotation.y,
+        groupRef.current.rotation.z
+      ] as [number, number, number] : rotation;
+      
+      onPositionChange(
+        [worldPosition.x, worldPosition.y, worldPosition.z],
+        worldRotation,
+        throttle
+      );
+    }
+  });
+
   return (
     <>
       {/* Render all active projectiles */}
@@ -569,7 +604,7 @@ const SpaceFighter = ({
       </RigidBody>
     </>
   );
-};
+});
 
 // Preload the model to avoid loading during gameplay
 useGLTF.preload('/models/ship.gltf');
