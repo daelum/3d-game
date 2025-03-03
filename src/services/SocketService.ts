@@ -37,8 +37,8 @@ class SocketService {
     let serverUrl;
     
     if (import.meta.env.PROD) {
-      // For production, use the explicit ws:// protocol to connect to the server
-      serverUrl = 'ws://209.38.83.148:3000';
+      // Use the secure domain with wss:// protocol
+      serverUrl = 'https://lost-in-space.today';
       console.log(`Connecting to: ${serverUrl} (production)`);
     } else {
       // In development, use localhost
