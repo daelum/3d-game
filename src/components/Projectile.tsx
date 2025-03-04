@@ -15,7 +15,7 @@ interface ProjectileProps {
 const Projectile = ({
   position,
   direction,
-  speed = 50,
+  speed = 500,
   damageAmount = 10,
   onHit,
 }: ProjectileProps) => {
@@ -23,27 +23,31 @@ const Projectile = ({
   const rigidBodyRef = useRef<any>(null);
   const [isActive, setIsActive] = useState(true);
   const [lifeTime, setLifeTime] = useState(0);
-  const MAX_LIFETIME = 3; // seconds
+  const MAX_LIFETIME = 8; // Increased from 3 to 8 seconds for longer range
   
   // Add visual trail effect using simpler approach
   const [trail, setTrail] = useState<THREE.Vector3[]>([]);
-  const trailLength = 10; // Number of trail segments
+  const baseTrailLength = 10; // Base number of trail segments
+  const [trailLength, setTrailLength] = useState(baseTrailLength);
   
   // Set up initial velocity in the direction of fire
   useEffect(() => {
     if (rigidBodyRef.current) {
-      const normalizedDir = direction.clone().normalize();
-      const velocity = normalizedDir.multiplyScalar(speed);
-      rigidBodyRef.current.setLinvel({ x: velocity.x, y: velocity.y, z: velocity.z });
+      // Use the direction vector directly since it now includes both direction and speed
+      rigidBodyRef.current.setLinvel({ 
+        x: direction.x, 
+        y: direction.y, 
+        z: direction.z 
+      });
       
       // Initialize trail with current position
       const initialTrail = [];
-      for (let i = 0; i < trailLength; i++) {
+      for (let i = 0; i < baseTrailLength; i++) {
         initialTrail.push(new THREE.Vector3(position[0], position[1], position[2]));
       }
       setTrail(initialTrail);
     }
-  }, [direction, speed, position]);
+  }, [direction, position]);
   
   // Update lifetime and destroy if too old
   useFrame((state, delta) => {
@@ -58,13 +62,20 @@ const Projectile = ({
       return newLifeTime;
     });
     
-    // Update trail positions
+    // Update trail positions and length based on speed
     if (rigidBodyRef.current && bulletRef.current) {
       const currentPos = rigidBodyRef.current.translation();
+      const currentVel = rigidBodyRef.current.linvel();
+      const speed = new THREE.Vector3(currentVel.x, currentVel.y, currentVel.z).length();
+      
+      // Adjust trail length based on speed (longer trails for faster projectiles)
+      const newTrailLength = Math.min(baseTrailLength + Math.floor(speed / 100), 20);
+      setTrailLength(newTrailLength);
+      
       const newTrailPos = new THREE.Vector3(currentPos.x, currentPos.y, currentPos.z);
       
       setTrail(prevTrail => {
-        const newTrail = [newTrailPos, ...prevTrail.slice(0, trailLength - 1)];
+        const newTrail = [newTrailPos, ...prevTrail.slice(0, newTrailLength - 1)];
         return newTrail;
       });
     }

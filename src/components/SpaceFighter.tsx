@@ -25,6 +25,7 @@ interface SpaceFighterProps {
   onCollision?: () => void; // Add callback for general collision detection
   onOrientationChange?: (pitch: number, yaw: number, roll: number) => void; // Add callback for orientation changes
   onPositionChange?: (position: [number, number, number], rotation: [number, number, number], throttle: number) => void; // Add callback for position changes (multiplayer)
+  onWeaponHeatChange?: (heat: number) => void; // Add new prop for weapon heat
 }
 
 // Convert SpaceFighter to use forwardRef for multiplayer functionality
@@ -37,6 +38,7 @@ const SpaceFighter = forwardRef<any, SpaceFighterProps>(({
   onCollision,
   onOrientationChange,
   onPositionChange,
+  onWeaponHeatChange,
 }, ref) => {
   // Load the ship model
   const { nodes, materials } = useGLTF('/models/ship.gltf') as GLTFResult;
@@ -74,6 +76,30 @@ const SpaceFighter = forwardRef<any, SpaceFighterProps>(({
   
   // Camera
   const { camera } = useThree();
+  
+  // Add audio listener and sound refs
+  const audioListener = useRef<THREE.AudioListener | null>(null);
+  const audioBuffer = useRef<AudioBuffer | null>(null);
+
+  // Initialize audio
+  useEffect(() => {
+    // Create audio listener
+    audioListener.current = new THREE.AudioListener();
+    camera.add(audioListener.current);
+
+    // Load laser sound buffer
+    const audioLoader = new THREE.AudioLoader();
+    audioLoader.load('/sounds/laser.mp3', (buffer) => {
+      audioBuffer.current = buffer;
+    });
+
+    // Cleanup
+    return () => {
+      if (audioListener.current) {
+        camera.remove(audioListener.current);
+      }
+    };
+  }, [camera]);
   
   // Set first-person cockpit view
   useEffect(() => {
@@ -250,15 +276,47 @@ const SpaceFighter = forwardRef<any, SpaceFighterProps>(({
     }
   }, [throttle, onThrottleChange]);
   
+  // Add weapon heat system
+  const [weaponHeat, setWeaponHeat] = useState(0);
+  const MAX_HEAT = 100;
+  const HEAT_PER_SHOT = 15;
+  const COOLDOWN_RATE = 25; // Heat units per second
+  const OVERHEAT_COOLDOWN_TIME = 2; // Seconds to wait after overheat
+  const lastOverheatTime = useRef(0);
+  
   // Function to create a new projectile
   const fireProjectile = () => {
     if (!rigidBodyRef.current) return;
     
     const now = Date.now();
-    if (now - lastFireTime.current < fireRate) return; // Limit fire rate
+    if (now - lastFireTime.current < fireRate) return;
+
+    // Check heat level and overheat cooldown
+    if (weaponHeat >= MAX_HEAT) {
+      lastOverheatTime.current = now;
+      return;
+    }
     
+    // If we're in overheat cooldown, prevent firing
+    if (now - lastOverheatTime.current < OVERHEAT_COOLDOWN_TIME * 1000) {
+      return;
+    }
+
+    // Add heat
+    setWeaponHeat(prev => Math.min(prev + HEAT_PER_SHOT, MAX_HEAT));
+
+    // Play laser sound by creating a new audio instance
+    if (audioListener.current && audioBuffer.current) {
+      const sound = new THREE.Audio(audioListener.current);
+      sound.setBuffer(audioBuffer.current);
+      sound.setVolume(0.5);
+      sound.play();
+      sound.onEnded = () => sound.disconnect();
+    }
+
     // Get the current ship position and rotation
     const shipPosition = rigidBodyRef.current.translation();
+    const shipVelocity = rigidBodyRef.current.linvel();
     
     // Calculate projectile direction based on ship's orientation
     const forwardDirection = new THREE.Vector3(0, 0, -1);
@@ -272,28 +330,64 @@ const SpaceFighter = forwardRef<any, SpaceFighterProps>(({
       shipPosition.y + shipDirection.y * 2, 
       shipPosition.z + shipDirection.z * 2
     ];
+
+    // Calculate projectile velocity by combining ship velocity and projectile speed
+    // Massively increased base projectile speed
+    const baseProjectileSpeed = 500;
+    
+    // Get ship's current speed
+    const shipSpeed = new THREE.Vector3(shipVelocity.x, shipVelocity.y, shipVelocity.z).length();
+    
+    // Calculate final projectile speed
+    // Always make projectiles at least 3x faster than the ship's current speed
+    const finalProjectileSpeed = Math.max(baseProjectileSpeed, shipSpeed * 3);
+    
+    // Combine ship's velocity with projectile direction and speed
+    const projectileVelocity = new THREE.Vector3(shipVelocity.x, shipVelocity.y, shipVelocity.z);
+    projectileVelocity.add(shipDirection.multiplyScalar(finalProjectileSpeed));
     
     // Add the new projectile to state
     const newProjectile = {
       id: nextProjectileId.current++,
       position: projectilePosition,
-      direction: shipDirection
+      direction: projectileVelocity // Remove normalization to preserve speed
     };
     
     setProjectiles(prevProjectiles => [...prevProjectiles, newProjectile]);
     
-    // Play gun sound effect
-    // You could add sound effects here in the future
-    
     // Update last fire time
     lastFireTime.current = now;
     
-    console.log('Projectile fired:', newProjectile);
+    console.log('Projectile fired:', {
+      position: projectilePosition,
+      shipSpeed,
+      finalProjectileSpeed,
+      velocity: projectileVelocity
+    });
   };
   
   // Movement and animation logic
   useFrame((state, delta) => {
     if (!rigidBodyRef.current || !groupRef.current) return;
+    
+    // Cool down weapon heat
+    const now = Date.now();
+    const isInOverheatCooldown = now - lastOverheatTime.current < OVERHEAT_COOLDOWN_TIME * 1000;
+    
+    if (isInOverheatCooldown) {
+      // Cool down twice as fast during overheat recovery
+      setWeaponHeat(prev => Math.max(0, prev - COOLDOWN_RATE * 2 * delta));
+    } else {
+      // Normal cooldown when not firing
+      if (!isFiring) {
+        setWeaponHeat(prev => Math.max(0, prev - COOLDOWN_RATE * delta));
+      }
+    }
+
+    // Report weapon heat to parent component
+    if (onWeaponHeatChange) {
+      onWeaponHeatChange(weaponHeat);
+    }
     
     // Check for firing
     if (isFiring) {

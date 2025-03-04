@@ -117,6 +117,9 @@ const GameScene = () => {
   const POSITION_UPDATE_INTERVAL = 50; // milliseconds between position updates
   const [multiplayerReady, setMultiplayerReady] = useState(false);
   
+  // Add weapon heat state
+  const [weaponHeat, setWeaponHeat] = useState(0);
+
   // Function to update throttle from SpaceFighter
   const updateThrottle = (value: number) => {
     setCurrentThrottle(value);
@@ -473,6 +476,21 @@ const GameScene = () => {
               </div>
               <span className="status-value">{currentThrottle}%</span>
             </div>
+            {/* Add Weapon Heat Status */}
+            <div className="status-row">
+              <span>WEAPON:</span>
+              <div className="status-bar">
+                <div 
+                  className={`status-bar-fill ${
+                    weaponHeat > 80 ? 'critical-heat' :
+                    weaponHeat > 60 ? 'high-heat' :
+                    weaponHeat > 30 ? 'medium-heat' : 'normal-heat'
+                  }`}
+                  style={{ width: `${weaponHeat}%` }}
+                ></div>
+              </div>
+              <span className="status-value">{Math.round(weaponHeat)}%</span>
+            </div>
             <div className="status-row">
               <span>SCORE:</span>
               <span className="status-value">{score}</span>
@@ -566,7 +584,8 @@ const GameScene = () => {
               onTakeDamage={handleAsteroidDamage}
               onCollision={handleCollision}
               onOrientationChange={updateShipOrientation}
-              onPositionChange={updatePosition} // New prop to report position to server
+              onPositionChange={updatePosition}
+              onWeaponHeatChange={setWeaponHeat}
             />
             
             {/* Add CelestialBodies before the grid and other elements */}
