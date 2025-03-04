@@ -2,7 +2,8 @@ import { Physics, RigidBody, CuboidCollider, RapierRigidBody, useRapier } from '
 import { Stats, useGLTF, Stars, Environment, Sky, Grid } from '@react-three/drei';
 import { Perf } from 'r3f-perf';
 import SpaceFighter from './components/SpaceFighter';
-import AsteroidField from './components/AsteroidField'; // Uncommented to use it
+import AsteroidField from './components/AsteroidField';
+import CelestialBodies from './components/CelestialBodies';
 import { useControls } from 'leva';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Suspense, useState, useEffect, useRef } from 'react';
@@ -476,6 +477,10 @@ const GameScene = () => {
               <span>SCORE:</span>
               <span className="status-value">{score}</span>
             </div>
+            <div className="status-row">
+              <span>PLAYERS:</span>
+              <span className="status-value">{otherPlayers.size + 1}</span>
+            </div>
           </div>
           
           {/* Orientation Section */}
@@ -528,7 +533,7 @@ const GameScene = () => {
         }}
         frameloop={graphicsQuality === 'high' ? 'always' : 'demand'}
         dpr={graphicsQuality === 'low' ? 1 : window.devicePixelRatio}
-        camera={{ fov: 75, near: 0.1, far: 1000, position: [0, 0, 10] }}
+        camera={{ fov: 75, near: 0.1, far: 2000, position: [0, 0, 10] }}
         style={{ background: '#000000' }}
         tabIndex={0}
         onContextMenu={(e) => e.preventDefault()}
@@ -539,11 +544,12 @@ const GameScene = () => {
         onFocus={() => handleCanvasFocus()}
       >
         <color attach="background" args={['#000']} />
-        <fog attach="fog" args={['#000', 50, 600]} />
+        <fog attach="fog" args={['#000', 50, 1500]} />
         <ambientLight intensity={intensity} />
         
         <pointLight position={[100, 100, 100]} intensity={0.5} />
         <pointLight position={[-100, -100, -100]} intensity={0.5} />
+        <pointLight position={[-100, 100, -100]} intensity={0.5} />
         
         <Physics debug={false} timeStep="vary" gravity={[0, 0, 0]} colliders={false}>
           <CollisionDetector onCollision={handleCollision} />
@@ -563,6 +569,9 @@ const GameScene = () => {
               onPositionChange={updatePosition} // New prop to report position to server
             />
             
+            {/* Add CelestialBodies before the grid and other elements */}
+            <CelestialBodies mapSize={MAP_SIZE} />
+
             {/* 3D Map Grid visualization */}
             {showMapGrid && (
               <>
@@ -653,8 +662,7 @@ const GameScene = () => {
               </>
             )}
             
-            {/* Visual debug helpers - keep existing ones */}
-            <axesHelper position={[0, 0, 0]} args={[400]} />
+            {/* Add back just the gridHelper */}
             <gridHelper position={[0, -20, 0]} args={[MAP_SIZE * 2, 80, 0x00ff00, 0x222222]} />
             
             {/* Additional reference objects - keep existing ones */}
@@ -694,12 +702,6 @@ const GameScene = () => {
         {/* Show performance stats */}
         <Stats showPanel={0} className="stats-panel" />
       </Canvas>
-      
-      <DebugPanel 
-        isConnected={isConnected} 
-        localPlayerId={localPlayerId.current || ""} 
-        otherPlayers={otherPlayers} 
-      />
     </>
   );
 };

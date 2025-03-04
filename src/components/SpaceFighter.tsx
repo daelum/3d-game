@@ -369,8 +369,33 @@ const SpaceFighter = forwardRef<any, SpaceFighterProps>(({
       z: shipPosition.z + shipDirection.z * finalSpeed
     };
     
-    // Set the ship's new position
-    rigidBodyRef.current.setTranslation(newPosition, true);
+    // Check if ship has gone too far from origin and wrap position
+    const WRAP_LIMIT = 1600; // Expanded play area
+    let needsWrap = false;
+    let wrappedPosition = { ...newPosition };
+
+    // Check each axis and wrap if needed
+    const axes: (keyof typeof newPosition)[] = ['x', 'y', 'z'];
+    axes.forEach(axis => {
+      if (Math.abs(wrappedPosition[axis]) > WRAP_LIMIT) {
+        // Wrap exactly to the opposite edge
+        wrappedPosition[axis] = -Math.sign(wrappedPosition[axis]) * WRAP_LIMIT;
+        needsWrap = true;
+      }
+    });
+
+    // If we need to wrap, do it before applying the regular movement
+    if (needsWrap) {
+      rigidBodyRef.current.setTranslation(wrappedPosition, true);
+      // Preserve velocity after wrapping
+      const currentVel = rigidBodyRef.current.linvel();
+      rigidBodyRef.current.setLinvel(currentVel, true);
+      // Update newPosition to the wrapped position
+      Object.assign(newPosition, wrappedPosition);
+    } else {
+      // Only set the new position if we haven't wrapped
+      rigidBodyRef.current.setTranslation(newPosition, true);
+    }
     
     // Report throttle changes to parent component
     if (onThrottleChange) {
